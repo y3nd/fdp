@@ -13,24 +13,17 @@
 
 #define DOMAIN AF_INET
 
-#define MSG_LENGTH 64
-#define PORT_LENGTH 5
-#define ACK_NO_LENGTH 5
-#define FILE_CHUNK_SIZE 1024
+#define MSG_LENGTH 11
+#define PORT_LENGTH 4
+#define ACK_NO_LENGTH 6
+#define FILE_CHUNK_SIZE 1494
+#define SEGMENT_LENGTH 1500
 #define BASE_WINDOW_SIZE 5
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"
 #define ACK "ACK"
-#define ACK_NO "ACK_"
 #define FIN "FIN"
-
-struct segment {
-  unsigned short no;
-  size_t size;
-  unsigned int window_size;
-  char data[FILE_CHUNK_SIZE];
-};
 
 void checkerr(long err, char *msg) {
   if (err < 0) {
@@ -73,7 +66,7 @@ long recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   ssize_t n = recvfrom(s, buffer, len, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_bytes");
   printPID();
-  printf("Received %ld bytes from %s:%d (seg %d)\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port), ((struct segment *)buffer)->no);
+  printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 

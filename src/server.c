@@ -54,30 +54,34 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_sec = 0;
   polling.tv_usec = 0;
 
+  unsigned int last_received_ack_no = 0;
+  unsigned int last_sent_ack_no = 0;
   unsigned int window_index = 0;
-
-  struct segment seg_buffer[BASE_WINDOW_SIZE];
+  unsigned int window_size = BASE_WINDOW_SIZE;
+  char window[window_size][SEGMENT_LENGTH];
 
   // send file chunk by chunk
-  while (1) {
-    struct segment seg = {
-        .no = 0,
-        .window_size = BASE_WINDOW_SIZE,
-    };
+  unsigned int no = 0;
+  size_t bytes_read;
 
-    seg.size = fread(seg.data, 1, FILE_CHUNK_SIZE, fp);
-    if (seg.size == 0) {
+  while (1) {
+    char *seg = window[window_index];
+
+    snprintf(seg, ACK_NO_LENGTH, "%06d", no);
+
+    bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);
+    if (bytes_read == 0) {
       break;
     }
 
     printf("window_index: %d\n", window_index);
 
     // send data and save in seg_buffer
-    send_bytes(c_sock, (char *)&seg, sizeof(struct segment), c_addr_ptr);
+    send_bytes(c_sock, seg, ACK_NO_LENGTH + bytes_read, c_addr_ptr);
     // seg_buffer[window_index] = seg;
 
     // poll for ACK, or wait until timeout if window is full
-    struct timeval *time_ptr = window_index == seg.window_size ? &timeout : &polling;
+    struct timeval *time_ptr = window_index == window_size ? &timeout : &polling;
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
 
@@ -86,13 +90,23 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     if (FD_ISSET(c_sock, &read_set)) {
       printf("isset\n");
 
-      // prepare the expected ack string
-      char ack_with_no[sizeof(ACK_NO) + ACK_NO_LENGTH + 1];
-      sprintf(ack_with_no, "%s%d", ACK_NO, seg.no);
+      // expect ACK
+      printPID();
+      printf("Waiting for ACK on socket %d...\n", c_sock);
 
-      if (recv_control_str(c_sock, ack_with_no, c_addr_ptr)) {
-        // ack received, reset window
-        window_index = 0;
+      char msg[MSG_LENGTH];
+      size_t n = recv_str(c_sock, msg, c_addr_ptr);
+
+      if (strncmp(msg, ACK, 3) == 0) {
+        unsigned int ack_no = atoi(&msg[3]);
+
+        if (ack_no == no) {
+          // ack received
+        }
+
+      } else {
+        printPID();
+        printf("Expected ACK, got %s\n", msg);
       }
     } else {
       printf("not isset\n");
@@ -100,8 +114,8 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
     printf("after recv\n");
 
-    window_index++;
-    seg.no++;
+    window_index = (window_index + 1) % window_size;
+    no++;
   }
 
   fclose(fp);
