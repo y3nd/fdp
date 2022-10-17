@@ -1,0 +1,9 @@
+1. On envoie des segments de 1500 octets tant que la window n'est pas pleine => (n° dernier seg envoyé) - (n° dernier ack reçu) = taille de window
+2. On attends un paquet ACKNNNNNN
+3. On fait un atoi sur le NNNNNN => acquittement dernier segment reçu par le client, et on stocke cette valeur dans (n° dernier ack reçu)
+4. Si après x ms (estimé à partir du RTT) on ne reçoit pas d'autre ACK, on renvoit les segments entre le (dernier ack + 1) et le dernier segment envoyé
+5. On doit donc recevoir le ACK pour le dernier segment envoyé
+
+1. taille de la window fixe, normalement égale à (n° dernier seg envoyé) - (n° dernier ack reçu)
+2. quand on reçoit un ack, on monte le (n° dernier seg reçu) à cet ack, on peut "supprimer" les segments dans la window
+3. si on ne reçoit pas l'ack au bout du temps estimé (timeout), on renvoie tous les segments entre le (n° dernier ack reçu)+1 et (n° dernier seg envoyé) compris.
