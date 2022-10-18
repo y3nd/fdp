@@ -33,6 +33,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_sec = 0;
   polling.tv_usec = 0;
 
+  long actual_last_seg_no = -1;
   unsigned int last_received_ack_no = 0;
   unsigned int last_sent_seg_no = 0;
   unsigned int window_size = BASE_WINDOW_SIZE;
@@ -40,22 +41,27 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
   size_t bytes_read;
   while (1) {
-    last_sent_seg_no++;
-
     char *seg = window[last_sent_seg_no % window_size];
 
-    snprintf(seg, ACK_NO_LENGTH, "%06d", last_sent_seg_no);
+    snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);  // ACK_NO_LENGTH + 1 to include null terminator
 
-    bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);
+    bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
     if (bytes_read == 0) {
-      break;
+      actual_last_seg_no = last_sent_seg_no - 1;
     }
 
     // send data and save in seg_buffer
-    send_bytes(c_sock, seg, ACK_NO_LENGTH + bytes_read, c_addr_ptr);
+    if (bytes_read > 0) {
+      send_bytes(c_sock, seg, ACK_NO_LENGTH + bytes_read, c_addr_ptr);
+    }
 
     // poll for ACK, or if window is full, wait for ACK until timeout
-    unsigned int credit = last_sent_seg_no - last_received_ack_no - 1;
+    unsigned int credit = last_sent_seg_no + 1 - last_received_ack_no + 1;  // nb of unacknowledged segments
+    if (credit > window_size) {
+      printf("Error: credit = %d = %d + 1 - %d + 1 > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
+      exit(1);
+    }
+    printf("credit = %d\n", credit);
     struct timeval *time_ptr = credit == window_size ? &timeout : &polling;
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
@@ -69,7 +75,13 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
       if (strncmp(msg, ACK, 3) == 0) {
         unsigned int ack = atoi(&msg[3]);
+        if (ack == actual_last_seg_no) {  // or ==
+          printf("end of file reached\n");
+          break;
+        }
+
         if (ack > last_received_ack_no) {
+          printf("received ACK %d\n", ack);
           last_received_ack_no = ack;
         }
       } else {
@@ -83,6 +95,10 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     } /* else {
        // no ACK received, but window is not full
      }*/
+
+    if (bytes_read > 0) {
+      last_sent_seg_no++;
+    }
   }
 
   fclose(fp);
