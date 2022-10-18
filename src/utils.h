@@ -13,6 +13,7 @@
 
 #define DOMAIN AF_INET
 
+#define FILENAME_LEN 256
 #define MSG_LENGTH 11
 #define PORT_LENGTH 4
 #define ACK_NO_LENGTH 6
@@ -84,6 +85,27 @@ long recv_control_str(int s, char *control_str, struct sockaddr_in *addr_ptr) {
   }
 
   return n;
+}
+
+int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
+  int sock = socket(DOMAIN, SOCK_DGRAM, 0);
+  checkerr(sock, "socket");
+
+  int reuse = 1;
+  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+  memset((char *)addr_ptr, 0, sizeof(struct sockaddr_in));
+  addr_ptr->sin_family = DOMAIN;
+  addr_ptr->sin_port = htons(port);
+  addr_ptr->sin_addr.s_addr = htonl(INADDR_ANY);
+
+  int err = bind(sock, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
+  checkerr(err, "bind");
+
+  printPID();
+  printf("New UDP socket %d listening on port %d\n", sock, port);
+
+  return sock;
 }
 
 #endif

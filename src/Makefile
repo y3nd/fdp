@@ -1,6 +1,6 @@
 all: ../bin/server
 
-../bin/server: server.c shared.h
+../bin/server: server.c utils.h
 	gcc -o ../bin/server server.c
 
 clean:

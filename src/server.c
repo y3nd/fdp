@@ -9,31 +9,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "shared.h"
-
-int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
-  int sock = socket(DOMAIN, SOCK_DGRAM, 0);
-  checkerr(sock, "socket");
-
-  int reuse = 1;
-  setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-  memset((char *)addr_ptr, 0, sizeof(struct sockaddr_in));
-  addr_ptr->sin_family = DOMAIN;
-  addr_ptr->sin_port = htons(port);
-  addr_ptr->sin_addr.s_addr = htonl(INADDR_ANY);
-
-  int err = bind(sock, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
-  checkerr(err, "bind");
-
-  printPID();
-  printf("New UDP socket %d listening on port %d\n", sock, port);
-
-  return sock;
-}
+#include "utils.h"
 
 void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
-  char filename[MSG_LENGTH];
+  char filename[FILENAME_LEN];
   recv_str(c_sock, filename, c_addr_ptr);
 
   // read file
@@ -55,67 +34,55 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_usec = 0;
 
   unsigned int last_received_ack_no = 0;
-  unsigned int last_sent_ack_no = 0;
-  unsigned int window_index = 0;
+  unsigned int last_sent_seg_no = 0;
   unsigned int window_size = BASE_WINDOW_SIZE;
   char window[window_size][SEGMENT_LENGTH];
 
-  // send file chunk by chunk
-  unsigned int no = 0;
   size_t bytes_read;
-
   while (1) {
-    char *seg = window[window_index];
+    last_sent_seg_no++;
 
-    snprintf(seg, ACK_NO_LENGTH, "%06d", no);
+    char *seg = window[last_sent_seg_no % window_size];
+
+    snprintf(seg, ACK_NO_LENGTH, "%06d", last_sent_seg_no);
 
     bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);
     if (bytes_read == 0) {
       break;
     }
 
-    printf("window_index: %d\n", window_index);
-
     // send data and save in seg_buffer
     send_bytes(c_sock, seg, ACK_NO_LENGTH + bytes_read, c_addr_ptr);
-    // seg_buffer[window_index] = seg;
 
-    // poll for ACK, or wait until timeout if window is full
-    struct timeval *time_ptr = window_index == window_size ? &timeout : &polling;
+    // poll for ACK, or if window is full, wait for ACK until timeout
+    unsigned int credit = last_sent_seg_no - last_received_ack_no - 1;
+    struct timeval *time_ptr = credit == window_size ? &timeout : &polling;
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
-
-    printf("after send\n");
-
     if (FD_ISSET(c_sock, &read_set)) {
-      printf("isset\n");
-
       // expect ACK
       printPID();
       printf("Waiting for ACK on socket %d...\n", c_sock);
 
-      char msg[MSG_LENGTH];
+      char msg[3 + ACK_NO_LENGTH];
       size_t n = recv_str(c_sock, msg, c_addr_ptr);
 
       if (strncmp(msg, ACK, 3) == 0) {
-        unsigned int ack_no = atoi(&msg[3]);
-
-        if (ack_no == no) {
-          // ack received
+        unsigned int ack = atoi(&msg[3]);
+        if (ack > last_received_ack_no) {
+          last_received_ack_no = ack;
         }
-
       } else {
         printPID();
         printf("Expected ACK, got %s\n", msg);
       }
-    } else {
-      printf("not isset\n");
-    }
-
-    printf("after recv\n");
-
-    window_index = (window_index + 1) % window_size;
-    no++;
+    } else if (time_ptr == &timeout) {
+      // timeout : no ACK received for window, resend since last_ack_received
+      printf("Timeout\n");
+      last_sent_seg_no = last_received_ack_no;
+    } /* else {
+       // no ACK received, but window is not full
+     }*/
   }
 
   fclose(fp);
