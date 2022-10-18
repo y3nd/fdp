@@ -33,12 +33,12 @@ void checkerr(long err, char *msg) {
   }
 }
 
-void printPID() {
-  printf("(%ld) [%d] ", time(0), getpid());
+void print_ts() {
+  printf("(%ld) ", time(0));
 }
 
 long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
-  printPID();
+  print_ts();
   printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, msg, strlen(msg) + 1, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_str");
@@ -46,7 +46,7 @@ long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
 }
 
 long send_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
-  printPID();
+  print_ts();
   printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, buffer, len, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_bytes");
@@ -57,8 +57,8 @@ long recv_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, msg, MSG_LENGTH, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_str");
-  printPID();
-  printf("Received \"%s\" from %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  // print_ts();
+  // printf("Received \"%s\" from %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 
@@ -66,20 +66,20 @@ long recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, buffer, len, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_bytes");
-  printPID();
+  print_ts();
   printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 
 long recv_control_str(int s, char *control_str, struct sockaddr_in *addr_ptr) {
-  printPID();
+  print_ts();
   printf("Waiting for \"%s\" on socket %d...\n", control_str, s);
 
   char msg[MSG_LENGTH];
   long n = recv_str(s, msg, addr_ptr);
 
   if (strncmp(msg, control_str, strlen(control_str)) != 0) {
-    printPID();
+    print_ts();
     printf("Expected %s, got %s\n", control_str, msg);
     return 0;
   }
@@ -102,7 +102,7 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
   int err = bind(sock, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(err, "bind");
 
-  printPID();
+  print_ts();
   printf("New UDP socket %d listening on port %d\n", sock, port);
 
   return sock;

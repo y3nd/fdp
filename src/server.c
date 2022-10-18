@@ -34,7 +34,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_usec = 0;
 
   long actual_last_seg_no = -1;
-  unsigned int last_received_ack_no = 0;
+  long last_received_ack_no = -1;
   unsigned int last_sent_seg_no = 0;
   unsigned int window_size = BASE_WINDOW_SIZE;
   char window[window_size][SEGMENT_LENGTH];
@@ -56,20 +56,18 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     }
 
     // poll for ACK, or if window is full, wait for ACK until timeout
-    unsigned int credit = last_sent_seg_no + 1 - last_received_ack_no + 1;  // nb of unacknowledged segments
+    unsigned int credit = last_sent_seg_no - last_received_ack_no;  // nb of unacknowledged segments
     if (credit > window_size) {
-      printf("Error: credit = %d = %d + 1 - %d + 1 > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
+      printf("Error: credit = %d = %d - %d > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
       exit(1);
     }
     printf("credit = %d\n", credit);
     struct timeval *time_ptr = credit == window_size ? &timeout : &polling;
+    printf("select using timeout ? %d\n", time_ptr == &timeout);
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     if (FD_ISSET(c_sock, &read_set)) {
       // expect ACK
-      printPID();
-      printf("Waiting for ACK on socket %d...\n", c_sock);
-
       char msg[3 + ACK_NO_LENGTH];
       size_t n = recv_str(c_sock, msg, c_addr_ptr);
 
@@ -81,11 +79,12 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
         }
 
         if (ack > last_received_ack_no) {
-          printf("received ACK %d\n", ack);
+          print_ts();
+          printf("RECEIVED ACK %d\n", ack);
           last_received_ack_no = ack;
         }
       } else {
-        printPID();
+        print_ts();
         printf("Expected ACK, got %s\n", msg);
       }
     } else if (time_ptr == &timeout) {
