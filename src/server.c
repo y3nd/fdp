@@ -34,6 +34,8 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_usec = 0;
 
   long actual_last_seg_no = -1;
+  long actual_last_seg_length = -1;
+  long last_generated_seg_no = -1;
   long last_received_ack_no = -1;
   unsigned int last_sent_seg_no = 0;
   unsigned int window_size = BASE_WINDOW_SIZE;
@@ -45,17 +47,23 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
     char *seg = window[last_sent_seg_no % window_size];
 
-    snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);  // ACK_NO_LENGTH + 1 to include null terminator
-
-    bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
-    if (bytes_read == 0) {
-      actual_last_seg_no = last_sent_seg_no - 1;
+    // segment generation
+    if(last_sent_seg_no > last_generated_seg_no) {
+      printf("need to generate new segment %d\n", last_sent_seg_no);
+      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);  // ACK_NO_LENGTH + 1 to include null terminator
+      bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
+      if (bytes_read != FILE_CHUNK_SIZE) {
+        actual_last_seg_no = last_sent_seg_no;
+        actual_last_seg_length = bytes_read;
+      }
+      last_generated_seg_no = last_sent_seg_no;
     }
 
     // send data and save in seg_buffer
     if (bytes_read > 0) {
-      printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, ACK_NO_LENGTH + bytes_read);
-      send_bytes(c_sock, seg, ACK_NO_LENGTH + bytes_read, c_addr_ptr);
+      int seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
+      printf("sending segment %d (%d bytes)\n", last_sent_seg_no, seg_length);
+      send_bytes(c_sock, seg, seg_length, c_addr_ptr);
     }
 
     // poll for ACK, or if window is full, wait for ACK until timeout
@@ -64,7 +72,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       exit(1);
     }
     printf("credit = %d\n", credit);
-    struct timeval *time_ptr = credit == window_size ? &timeout : &polling;
+    struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
     //printf("select using timeout ? %d\n", time_ptr == &timeout);
     if(time_ptr == &timeout) printf("waiting for ack because window is full..\n");
     FD_SET(c_sock, &read_set);
@@ -75,7 +83,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       // expect ACK
       char msg[3 + ACK_NO_LENGTH];
       size_t n = recv_str(c_sock, msg, c_addr_ptr);
-      //printf("recv: %s\n", msg);
+      printf("recv: %s\n", msg);
 
       if (strncmp(msg, ACK, 3) == 0) {
         unsigned int ack = atoi(&msg[3]);
@@ -89,6 +97,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
           print_ts();
           printf("RECEIVED ACK %d\n", ack);
           last_received_ack_no = ack;
+          if(last_received_ack_no > last_sent_seg_no) last_sent_seg_no = last_received_ack_no;
           received_ack = 1; // cancel timeout trigger
         }
       } else {
@@ -101,14 +110,12 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       // timeout : no ACK received for window, resend since last_ack_received
       printf("Timeout\n");
       // edit credit
-      last_sent_seg_no = last_received_ack_no;
+      last_sent_seg_no = last_received_ack_no; // will be incremented
       printf("resending from seg %d new credit = %ld\n", last_sent_seg_no+1, last_sent_seg_no - last_received_ack_no);
-    } /* else {
-       // no ACK received, but window is not full
-     }*/
+    }
 
     // it should not be incremented if it's the last segment
-    if (bytes_read == FILE_CHUNK_SIZE) {
+    if (last_sent_seg_no != actual_last_seg_no) {
       last_sent_seg_no++;
     }
   }
