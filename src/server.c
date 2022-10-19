@@ -51,12 +51,16 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     if (last_sent_seg_no > last_generated_seg_no) {
       print_ts();
       printf("need to generate new segment %d\n", last_sent_seg_no);
-      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);       // ACK_NO_LENGTH + 1 to include null terminator
+
+      // ACK_NO_LENGTH + 1 to include null terminator
+      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no + 1);   // fix: last_sent_seg_no + 1 because client expects 1-indexed ack no
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
+
       if (feof(fp)) {
         actual_last_seg_no = last_sent_seg_no;
         actual_last_seg_length = bytes_read;  // might be different from FILE_CHUNK_SIZE
       }
+
       last_generated_seg_no = last_sent_seg_no;
     }
 
@@ -94,15 +98,15 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       printf("recv: %s\n", msg);
 
       if (strncmp(msg, ACK, 3) == 0) {
-        unsigned int ack = atoi(&msg[3]);
-        if (ack == actual_last_seg_no) {  // or ==
+        unsigned int ack_no = atoi(&msg[3]) - 1;  // fix: -1 because our algorithm is 0-indexed
+        if (ack_no == actual_last_seg_no) {       // or ==
           break;
         }
 
-        if (ack > last_received_ack_no) {
+        if (ack_no > last_received_ack_no) {
           print_ts();
-          printf("RECEIVED ACK %d\n", ack);
-          last_received_ack_no = ack;
+          printf("RECEIVED ACK %d\n", ack_no);
+          last_received_ack_no = ack_no;
           if (last_received_ack_no > last_sent_seg_no) {
             last_sent_seg_no = last_received_ack_no;
           }
