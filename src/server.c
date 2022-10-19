@@ -33,11 +33,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   polling.tv_sec = 0;
   polling.tv_usec = 0;
 
-  long actual_last_seg_no = -1;
-  long actual_last_seg_length = -1;
-  long last_generated_seg_no = -1;
-  long last_received_ack_no = -1;
-  unsigned int last_sent_seg_no = 0;
+  unsigned int  actual_last_seg_no = 0;
+  unsigned int  actual_last_seg_length = 0;
+  unsigned int  last_generated_seg_no = 0;
+  unsigned int  last_received_ack_no = 0;
+  unsigned int last_sent_seg_no = 1;
   unsigned int window_size = BASE_WINDOW_SIZE;
   char window[window_size][SEGMENT_LENGTH];
 
@@ -45,7 +45,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   while (1) {
     unsigned int credit = last_sent_seg_no - last_received_ack_no;  // nb of unacknowledged segments
 
-    char *seg = window[last_sent_seg_no % window_size];
+    char *seg = window[(last_sent_seg_no-1) % window_size];
 
     // segment generation
     if (last_sent_seg_no > last_generated_seg_no) {
@@ -53,10 +53,12 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       printf("need to generate new segment %d\n", last_sent_seg_no);
 
       // ACK_NO_LENGTH + 1 to include null terminator
-      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no + 1);   // fix: last_sent_seg_no + 1 because client expects 1-indexed ack no
+      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);
+      printf("writing buffer in window i=%d\n", last_sent_seg_no-1 % window_size);
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
 
       if (feof(fp)) {
+      //if (bytes_read != FILE_CHUNK_SIZE) {
         actual_last_seg_no = last_sent_seg_no;
         actual_last_seg_length = bytes_read;  // might be different from FILE_CHUNK_SIZE
       }
@@ -68,13 +70,13 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     if (bytes_read > 0) {
       size_t seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
       print_ts();
-      printf("sending segment %d (%d bytes)\n", last_sent_seg_no, seg_length);
+      printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
     }
 
     if (credit > window_size) {
       print_ts();
-      printf("Error: credit = %d = %d - %ld > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
+      printf("Error: credit = %d = %d - %d > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
       exit(1);
     }
     print_ts();
@@ -93,12 +95,12 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     if (FD_ISSET(c_sock, &read_set)) {
       // expect ACK
       char msg[3 + ACK_NO_LENGTH];
-      size_t n = recv_str(c_sock, msg, c_addr_ptr);
+      /*size_t n = */recv_str(c_sock, msg, c_addr_ptr);
       print_ts();
       printf("recv: %s\n", msg);
 
       if (strncmp(msg, ACK, 3) == 0) {
-        unsigned int ack_no = atoi(&msg[3]) - 1;  // fix: -1 because our algorithm is 0-indexed
+        unsigned int ack_no = atoi(&msg[3]);
         if (ack_no == actual_last_seg_no) {       // or ==
           break;
         }
@@ -123,7 +125,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       // edit credit
       last_sent_seg_no = last_received_ack_no;  // will be incremented
       print_ts();
-      printf("Timeout ! resending from seg %d new credit = %ld\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
+      printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
     }
 
     // it should not be incremented if it's the last segment
