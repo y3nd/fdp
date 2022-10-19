@@ -48,70 +48,78 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     char *seg = window[last_sent_seg_no % window_size];
 
     // segment generation
-    if(last_sent_seg_no > last_generated_seg_no) {
+    if (last_sent_seg_no > last_generated_seg_no) {
+      print_ts();
       printf("need to generate new segment %d\n", last_sent_seg_no);
-      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);  // ACK_NO_LENGTH + 1 to include null terminator
+      snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);       // ACK_NO_LENGTH + 1 to include null terminator
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
-      if (bytes_read != FILE_CHUNK_SIZE) {
+      if (feof(fp)) {
         actual_last_seg_no = last_sent_seg_no;
-        actual_last_seg_length = bytes_read;
+        actual_last_seg_length = bytes_read;  // might be different from FILE_CHUNK_SIZE
       }
       last_generated_seg_no = last_sent_seg_no;
     }
 
     // send data and save in seg_buffer
     if (bytes_read > 0) {
-      int seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
+      size_t seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
+      print_ts();
       printf("sending segment %d (%d bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
     }
 
-    // poll for ACK, or if window is full, wait for ACK until timeout
     if (credit > window_size) {
+      print_ts();
       printf("Error: credit = %d = %d - %ld > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
       exit(1);
     }
+    print_ts();
     printf("credit = %d\n", credit);
+
+    // poll for ACK, or if window is full, wait for ACK until timeout
     struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
-    //printf("select using timeout ? %d\n", time_ptr == &timeout);
-    if(time_ptr == &timeout) printf("waiting for ack because window is full..\n");
+    if (time_ptr == &timeout) {
+      print_ts();
+      printf("waiting for ack because window is full..\n");
+    }
+
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
-    int received_ack = 0;
+    unsigned short received_ack = 0;
     if (FD_ISSET(c_sock, &read_set)) {
-      //printf("expect ACK\n");
       // expect ACK
       char msg[3 + ACK_NO_LENGTH];
       size_t n = recv_str(c_sock, msg, c_addr_ptr);
+      print_ts();
       printf("recv: %s\n", msg);
 
       if (strncmp(msg, ACK, 3) == 0) {
         unsigned int ack = atoi(&msg[3]);
         if (ack == actual_last_seg_no) {  // or ==
-          printf("end of file reached\n");
           break;
         }
 
-        //printf("ack > last_received_ack_no => %d > %ld\n", ack, last_received_ack_no);
         if (ack > last_received_ack_no) {
           print_ts();
           printf("RECEIVED ACK %d\n", ack);
           last_received_ack_no = ack;
-          if(last_received_ack_no > last_sent_seg_no) last_sent_seg_no = last_received_ack_no;
-          received_ack = 1; // cancel timeout trigger
+          if (last_received_ack_no > last_sent_seg_no) {
+            last_sent_seg_no = last_received_ack_no;
+          }
+          received_ack = 1;  // cancel timeout trigger
         }
       } else {
         print_ts();
         printf("Expected ACK, got %s\n", msg);
       }
     }
-    
+
     if (time_ptr == &timeout && !received_ack) {
       // timeout : no ACK received for window, resend since last_ack_received
-      printf("Timeout\n");
       // edit credit
-      last_sent_seg_no = last_received_ack_no; // will be incremented
-      printf("resending from seg %d new credit = %ld\n", last_sent_seg_no+1, last_sent_seg_no - last_received_ack_no);
+      last_sent_seg_no = last_received_ack_no;  // will be incremented
+      print_ts();
+      printf("Timeout ! resending from seg %d new credit = %ld\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
     }
 
     // it should not be incremented if it's the last segment
