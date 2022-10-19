@@ -14,17 +14,23 @@
 #define DOMAIN AF_INET
 
 #define FILENAME_LEN 256
-#define MSG_LENGTH 11
+#define MSG_LENGTH 20
 #define PORT_LENGTH 4
 #define ACK_NO_LENGTH 6
-#define FILE_CHUNK_SIZE 1494
+#define FILE_CHUNK_SIZE 1494 // 1500 - 6 (ACK_NO_LENGTH)
 #define SEGMENT_LENGTH 1500
-#define BASE_WINDOW_SIZE 5
+#define BASE_WINDOW_SIZE 100
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"
 #define ACK "ACK"
 #define FIN "FIN"
+
+uint64_t get_ts() {
+    struct timeval tv;
+    gettimeofday(&tv,NULL);
+    return tv.tv_sec*(uint64_t)1000000+tv.tv_usec;
+}
 
 void checkerr(long err, char *msg) {
   if (err < 0) {
@@ -38,16 +44,16 @@ void print_ts() {
 }
 
 long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
-  print_ts();
-  printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  // print_ts();
+  // printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, msg, strlen(msg) + 1, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_str");
   return n;
 }
 
 long send_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
-  print_ts();
-  printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  // print_ts();
+  // printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, buffer, len, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_bytes");
   return n;
