@@ -11,6 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define DEBUG 1
+
 #define DOMAIN AF_INET
 
 #define FILENAME_LEN 256
@@ -26,6 +28,12 @@
 #define ACK "ACK"
 #define FIN "FIN"
 
+#if DEBUG
+#define my_printf(...) print_ts(), printf(__VA_ARGS__);
+#else
+#define my_printf(...) ;
+#endif
+
 void checkerr(long err, char *msg) {
   if (err < 0) {
     printf("%s err = %ld\n", msg, err);
@@ -38,16 +46,14 @@ void print_ts() {
 }
 
 long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
-  print_ts();
-  printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  my_printf("Sending \"%s\" to %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, msg, strlen(msg) + 1, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_str");
   return n;
 }
 
 long send_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
-  print_ts();
-  printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  my_printf("Sending %ld bytes to %s:%d\n", len, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   ssize_t n = sendto(s, buffer, len, 0, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(n, "send_bytes");
   return n;
@@ -57,8 +63,6 @@ long recv_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, msg, MSG_LENGTH, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_str");
-  // print_ts();
-  // printf("Received \"%s\" from %s:%d\n", msg, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 
@@ -66,21 +70,18 @@ long recv_bytes(int s, char *buffer, size_t len, struct sockaddr_in *addr_ptr) {
   socklen_t size = sizeof(struct sockaddr_in);
   ssize_t n = recvfrom(s, buffer, len, 0, (struct sockaddr *)addr_ptr, &size);
   checkerr(n, "recv_bytes");
-  print_ts();
-  printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
+  my_printf("Received %ld bytes from %s:%d\n", n, inet_ntoa(addr_ptr->sin_addr), ntohs(addr_ptr->sin_port));
   return n;
 }
 
 long recv_control_str(int s, char *control_str, struct sockaddr_in *addr_ptr) {
-  print_ts();
-  printf("Waiting for \"%s\" on socket %d...\n", control_str, s);
+  my_printf("Waiting for \"%s\" on socket %d...\n", control_str, s);
 
   char msg[MSG_LENGTH];
   long n = recv_str(s, msg, addr_ptr);
 
   if (strncmp(msg, control_str, strlen(control_str)) != 0) {
-    print_ts();
-    printf("Expected %s, got %s\n", control_str, msg);
+    my_printf("Expected %s, got %s\n", control_str, msg);
     return 0;
   }
 
@@ -102,8 +103,7 @@ int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
   int err = bind(sock, (struct sockaddr *)addr_ptr, sizeof(struct sockaddr_in));
   checkerr(err, "bind");
 
-  print_ts();
-  printf("New UDP socket %d listening on port %d\n", sock, port);
+  my_printf("New UDP socket %d listening on port %d\n", sock, port);
 
   return sock;
 }
