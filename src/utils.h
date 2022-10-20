@@ -11,6 +11,8 @@
 #include <time.h>
 #include <unistd.h>
 
+#define CLIENTNB 2
+
 #define DEBUG 0
 
 #define DOMAIN AF_INET
@@ -25,7 +27,17 @@
 #define SLOWSTART_MULT 2 // multiplicate window size with this value each seg sent
 #define SLOWSTART_DIV 2 // divide winow size with this value each timeout
 #define BUFFER_SIZE 32 // equals to max window size
+
+#if CLIENTNB == 1
 #define TIMEOUT_BASE_US 50000
+#endif
+
+#if CLIENTNB == 2
+#define TIMEOUT_BASE_US 20000
+#endif
+
+
+
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"

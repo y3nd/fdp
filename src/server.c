@@ -100,9 +100,9 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       d_printf("waiting for ack because window is full..\n");
     }
 
-select_p:
     timeout.tv_sec = 0;
     timeout.tv_usec = TIMEOUT_BASE_US;
+select_p:
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     unsigned short received_ack = 0;
