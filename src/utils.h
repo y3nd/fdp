@@ -19,7 +19,7 @@
 #define MSG_LENGTH 20
 #define PORT_LENGTH 4
 #define ACK_NO_LENGTH 6
-#define FILE_CHUNK_SIZE 1494 // 1500 - 6 (ACK_NO_LENGTH)
+#define FILE_CHUNK_SIZE 1494  // 1500 - 6 (ACK_NO_LENGTH)
 #define SEGMENT_LENGTH 1500
 #define BASE_WINDOW_SIZE 100
 
@@ -35,9 +35,9 @@
 #endif
 
 uint64_t get_ts() {
-    struct timeval tv;
-    gettimeofday(&tv,NULL);
-    return tv.tv_sec*(uint64_t)1000000+tv.tv_usec;
+  struct timeval tv;
+  gettimeofday(&tv, NULL);
+  return tv.tv_sec * (uint64_t)1000000 + tv.tv_usec;
 }
 
 void checkerr(long err, char *msg) {
@@ -48,7 +48,7 @@ void checkerr(long err, char *msg) {
 }
 
 void print_ts() {
-  printf("(%ld) ", time(0));
+  printf("(%ld) ", get_ts());
 }
 
 long send_str(int s, char *msg, struct sockaddr_in *addr_ptr) {
