@@ -44,6 +44,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned int window_size = BASE_WINDOW_SIZE;
   char buffer[BUFFER_SIZE][SEGMENT_LENGTH];
   unsigned long total_bytes_read = 0;
+  unsigned long total_bytes_sent = 0;
   unsigned int fin_sent_count = 0;
 
   //printf("f\n");
@@ -78,6 +79,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       size_t seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
       d_printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
+      total_bytes_sent += seg_length;
     }
 
     // crash check
@@ -160,7 +162,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   uint64_t total_time_us = get_ts() - start_ts;
   // printf("%ld %ld", get_ts(), start_ts);
   uint64_t total_time_ms = total_time_us / 1000;
-  printf("data sent: %ld bytes | time: %ld ms\n", total_bytes_read, total_time_ms);
+  printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
   printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms)*8);
 }
 
