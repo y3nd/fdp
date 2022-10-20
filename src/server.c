@@ -15,6 +15,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   char filename[FILENAME_LEN];
   recv_str(c_sock, filename, c_addr_ptr);
 
+  printf("opening %s\n", filename);
   // read file
   FILE *fp = fopen(filename, "r");
   if (fp == NULL) {
@@ -41,22 +42,25 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned int last_received_ack_no = 0;
   unsigned int last_sent_seg_no = 1;
   unsigned int window_size = BASE_WINDOW_SIZE;
-  char window[window_size][SEGMENT_LENGTH];
+  char buffer[BUFFER_SIZE][SEGMENT_LENGTH];
   unsigned long total_bytes_read = 0;
+  unsigned int fin_sent_count = 0;
+
+  //printf("f\n");
 
   size_t bytes_read;
   while (1) {
     unsigned int credit = last_sent_seg_no - last_received_ack_no;  // nb of unacknowledged segments
 
-    char *seg = window[(last_sent_seg_no - 1) % window_size];
+    char *seg = buffer[(last_sent_seg_no - 1) % BUFFER_SIZE];
 
     // segment generation
     if (last_sent_seg_no > last_generated_seg_no) {
-      my_printf("need to generate new segment %d\n", last_sent_seg_no);
+      d_printf("need to generate new segment %d\n", last_sent_seg_no);
 
       // ACK_NO_LENGTH + 1 to include null terminator
       snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);
-      my_printf("writing buffer in window i=%d\n", last_sent_seg_no - 1 % window_size);
+      d_printf("writing seg in buffer i=%d\n", last_sent_seg_no - 1 % BUFFER_SIZE);
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
       total_bytes_read += bytes_read;
 
@@ -72,20 +76,21 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     // send data and save in seg_buffer
     if (bytes_read > 0) {
       size_t seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
-      my_printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
+      d_printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
     }
 
+    // crash check
     if (credit > window_size) {
-      my_printf("Error: credit = %d = %d - %d > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
+      d_printf("Error: credit = %d = %d - %d > window_size\n", credit, last_sent_seg_no, last_received_ack_no);
       exit(1);
     }
-    my_printf("credit = %d\n", credit);
+    d_printf("credit = %d\n", credit);
 
     // poll for ACK, or if window is full, wait for ACK until timeout
     struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
     if (time_ptr == &timeout) {
-      my_printf("waiting for ack because window is full..\n");
+      d_printf("waiting for ack because window is full..\n");
     }
 
   select_p:
@@ -96,21 +101,34 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       // expect ACK
       char msg[3 + ACK_NO_LENGTH];
       recv_str(c_sock, msg, c_addr_ptr);
-      my_printf("recv: %s\n", msg);
+      d_printf("recv: %s\n", msg);
 
       if (strncmp(msg, ACK, 3) == 0) {
         unsigned int ack_no = atoi(&msg[3]);
         if (ack_no == actual_last_seg_no) {
-          break;
+          print_ts();
+          printf("sending FIN\n");
+          send_str(c_sock, FIN, c_addr_ptr);
+          fin_sent_count++;
+          if(fin_sent_count == 5) break;
+          goto select_p;
         }
 
         if (ack_no > last_received_ack_no) {
-          my_printf("RECEIVED ACK %d\n", ack_no);
+          d_printf("RECEIVED ACK %d\n", ack_no);
           last_received_ack_no = ack_no;
           if (last_received_ack_no > last_sent_seg_no) {
             last_sent_seg_no = last_received_ack_no;
           }
           received_ack = 1;  // cancel timeout trigger
+
+          // slowstart
+          int new_window_size = window_size*SLOWSTART_MULT;
+          if(new_window_size <= BUFFER_SIZE) {
+            window_size = new_window_size;
+          } else {
+            window_size = BUFFER_SIZE;
+          }
         } else {
           goto select_p;
         }
@@ -121,7 +139,14 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       // timeout : no ACK received for window, resend since last_ack_received
       // edit credit
       last_sent_seg_no = last_received_ack_no;  // will be incremented
-      my_printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
+      d_printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
+      // slowstart
+      int new_window_size = window_size/SLOWSTART_DIV;
+      if(new_window_size >= 2) {
+        window_size = new_window_size;
+      } else {
+        window_size = 2;
+      }
     }
 
     // it should not be incremented if it's the last segment
@@ -132,15 +157,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
   fclose(fp);
 
-  print_ts();
-  printf("sending FIN\n");
-  send_str(c_sock, FIN, c_addr_ptr);
-
   uint64_t total_time_us = get_ts() - start_ts;
   // printf("%ld %ld", get_ts(), start_ts);
   uint64_t total_time_ms = total_time_us / 1000;
   printf("data sent: %ld bytes | time: %ld ms\n", total_bytes_read, total_time_ms);
-  printf("speed %ld kbytes / sec \n", (total_bytes_read / total_time_ms));
+  printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms)*8);
 }
 
 int main(int argc, char *argv[]) {
