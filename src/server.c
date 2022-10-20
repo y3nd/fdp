@@ -27,12 +27,12 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   FD_ZERO(&read_set);
 
   struct timeval timeout;
-  timeout.tv_sec = 1;
-  timeout.tv_usec = 0;
+  timeout.tv_sec = 0;
+  timeout.tv_usec = TIMEOUT_BASE_US;
 
   struct timeval polling;
   polling.tv_sec = 0;
-  polling.tv_usec = 0;
+  polling.tv_usec = TIMEOUT_BASE_US;
 
   uint64_t start_ts = get_ts();
 
@@ -43,9 +43,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned int last_sent_seg_no = 1;
   unsigned int window_size = BASE_WINDOW_SIZE;
   char buffer[BUFFER_SIZE][SEGMENT_LENGTH];
+
   unsigned long total_bytes_read = 0;
   unsigned long total_bytes_sent = 0;
-  unsigned int fin_sent_count = 0;
+  unsigned long total_segs_read = 0;
+  unsigned long total_segs_sent = 0;
 
   //printf("f\n");
 
@@ -64,6 +66,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       d_printf("writing seg in buffer i=%d\n", last_sent_seg_no - 1 % BUFFER_SIZE);
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
       total_bytes_read += bytes_read;
+      total_segs_read++;
 
       if (feof(fp)) {
         // if (bytes_read != FILE_CHUNK_SIZE) {
@@ -80,6 +83,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       d_printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
       total_bytes_sent += seg_length;
+      total_segs_sent++;
     }
 
     // crash check
@@ -89,13 +93,16 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     }
     d_printf("credit = %d\n", credit);
 
+  
     // poll for ACK, or if window is full, wait for ACK until timeout
     struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
     if (time_ptr == &timeout) {
       d_printf("waiting for ack because window is full..\n");
     }
 
-  select_p:
+select_p:
+    timeout.tv_sec = 0;
+    timeout.tv_usec = TIMEOUT_BASE_US;
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     unsigned short received_ack = 0;
@@ -111,9 +118,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
           print_ts();
           printf("sending FIN\n");
           send_str(c_sock, FIN, c_addr_ptr);
-          fin_sent_count++;
-          if(fin_sent_count == 5) break;
-          goto select_p;
+          break;
         }
 
         if (ack_no > last_received_ack_no) {
@@ -137,6 +142,8 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       }
     }
 
+    // is a "true" timeout => no data received
+    // is 
     if (time_ptr == &timeout && !received_ack) {
       // timeout : no ACK received for window, resend since last_ack_received
       // edit credit
@@ -162,7 +169,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   uint64_t total_time_us = get_ts() - start_ts;
   // printf("%ld %ld", get_ts(), start_ts);
   uint64_t total_time_ms = total_time_us / 1000;
+  unsigned long total_segs_dropped = total_segs_sent-total_segs_read;
+  float segs_drop_rate = (float)total_segs_dropped/total_segs_sent;
   printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
+  printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
+  printf("segs drop rate: %.2f%%\n", segs_drop_rate*100);
   printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms)*8);
 }
 
