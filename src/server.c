@@ -88,7 +88,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       my_printf("waiting for ack because window is full..\n");
     }
 
-select_p:
+  select_p:
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     unsigned short received_ack = 0;
@@ -136,11 +136,11 @@ select_p:
   printf("sending FIN\n");
   send_str(c_sock, FIN, c_addr_ptr);
 
-  uint64_t total_time_us = get_ts()-start_ts;
-  //printf("%ld %ld", get_ts(), start_ts);
-  uint64_t total_time_ms = total_time_us/1000;
+  uint64_t total_time_us = get_ts() - start_ts;
+  // printf("%ld %ld", get_ts(), start_ts);
+  uint64_t total_time_ms = total_time_us / 1000;
   printf("data sent: %ld bytes | time: %ld ms\n", total_bytes_read, total_time_ms);
-  printf("speed %ld kbytes / sec \n", (total_bytes_read/total_time_ms));
+  printf("speed %ld kbytes / sec \n", (total_bytes_read / total_time_ms));
 }
 
 int main(int argc, char *argv[]) {
