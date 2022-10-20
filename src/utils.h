@@ -21,7 +21,9 @@
 #define ACK_NO_LENGTH 6
 #define FILE_CHUNK_SIZE 1494 // 1500 - 6 (ACK_NO_LENGTH)
 #define SEGMENT_LENGTH 1500
-#define BASE_WINDOW_SIZE 100
+#define BASE_WINDOW_SIZE 2
+#define SLOWSTART_MULT 2 // multiplicate window size with this value each seg sent
+#define BUFFER_SIZE 65535 // equals to max window size
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"
