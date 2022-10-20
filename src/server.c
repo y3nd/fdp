@@ -142,10 +142,10 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       d_printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
       // slowstart
       int new_window_size = window_size/SLOWSTART_DIV;
-      if(new_window_size >= 2) {
+      if(new_window_size >= BASE_WINDOW_SIZE) {
         window_size = new_window_size;
       } else {
-        window_size = 2;
+        window_size = BASE_WINDOW_SIZE;
       }
     }
 
