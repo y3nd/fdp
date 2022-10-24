@@ -32,7 +32,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
   struct timeval polling;
   polling.tv_sec = 0;
-  polling.tv_usec = TIMEOUT_BASE_US;
+  polling.tv_usec = 0;
 
   uint64_t start_ts = get_ts();
 
@@ -48,8 +48,6 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned long total_bytes_sent = 0;
   unsigned long total_segs_read = 0;
   unsigned long total_segs_sent = 0;
-
-  //printf("f\n");
 
   size_t bytes_read;
   while (1) {
@@ -93,7 +91,6 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     }
     d_printf("credit = %d\n", credit);
 
-  
     // poll for ACK, or if window is full, wait for ACK until timeout
     struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
     if (time_ptr == &timeout) {
@@ -102,7 +99,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
     timeout.tv_sec = 0;
     timeout.tv_usec = TIMEOUT_BASE_US;
-select_p:
+  select_p:
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     unsigned short received_ack = 0;
@@ -123,6 +120,7 @@ select_p:
 
         if (ack_no > last_received_ack_no) {
           d_printf("RECEIVED ACK %d\n", ack_no);
+
           last_received_ack_no = ack_no;
           if (last_received_ack_no > last_sent_seg_no) {
             last_sent_seg_no = last_received_ack_no;
@@ -130,8 +128,8 @@ select_p:
           received_ack = 1;  // cancel timeout trigger
 
           // slowstart
-          int new_window_size = window_size*SLOWSTART_MULT;
-          if(new_window_size <= BUFFER_SIZE) {
+          int new_window_size = window_size * SLOWSTART_MULT;
+          if (new_window_size <= BUFFER_SIZE) {
             window_size = new_window_size;
           } else {
             window_size = BUFFER_SIZE;
@@ -143,15 +141,15 @@ select_p:
     }
 
     // is a "true" timeout => no data received
-    // is 
     if (time_ptr == &timeout && !received_ack) {
       // timeout : no ACK received for window, resend since last_ack_received
       // edit credit
       last_sent_seg_no = last_received_ack_no;  // will be incremented
       d_printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
+
       // slowstart
-      int new_window_size = window_size/SLOWSTART_DIV;
-      if(new_window_size >= BASE_WINDOW_SIZE) {
+      int new_window_size = window_size / SLOWSTART_DIV;
+      if (new_window_size >= BASE_WINDOW_SIZE) {
         window_size = new_window_size;
       } else {
         window_size = BASE_WINDOW_SIZE;
@@ -169,12 +167,12 @@ select_p:
   uint64_t total_time_us = get_ts() - start_ts;
   // printf("%ld %ld", get_ts(), start_ts);
   uint64_t total_time_ms = total_time_us / 1000;
-  unsigned long total_segs_dropped = total_segs_sent-total_segs_read;
-  float segs_drop_rate = (float)total_segs_dropped/total_segs_sent;
+  unsigned long total_segs_dropped = total_segs_sent - total_segs_read;
+  float segs_drop_rate = (float)total_segs_dropped / total_segs_sent;
   printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
   printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
-  printf("segs drop rate: %.2f%%\n", segs_drop_rate*100);
-  printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms)*8);
+  printf("segs drop rate: %.2f%%\n", segs_drop_rate * 100);
+  printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms) * 8);
 }
 
 int main(int argc, char *argv[]) {
