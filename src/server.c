@@ -11,11 +11,16 @@
 
 #include "utils.h"
 
+long compute_rtt_us(long sampleRTT, long *estimatedRTT, long *devRTT) {
+  *estimatedRTT = (1 - 0.125) * *estimatedRTT + 0.125 * sampleRTT;
+  *devRTT = 0.75 * *devRTT + 0.25 * abs(sampleRTT - *estimatedRTT);
+  return *estimatedRTT + 4 * *devRTT;
+}
+
 void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   char filename[FILENAME_LEN];
   recv_str(c_sock, filename, c_addr_ptr);
 
-  printf("opening %s\n", filename);
   // read file
   FILE *fp = fopen(filename, "r");
   if (fp == NULL) {
@@ -23,19 +28,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     exit(1);
   }
 
+  struct timeval POLLING = {
+      .tv_sec = 0,
+      .tv_usec = 0};
   fd_set read_set;
   FD_ZERO(&read_set);
-
-  struct timeval timeout;
-  timeout.tv_sec = 0;
-  timeout.tv_usec = TIMEOUT_BASE_US;
-
-  struct timeval polling;
-  polling.tv_sec = 0;
-  polling.tv_usec = 0;
-
-  uint64_t start_ts = get_ts();
-
   unsigned int actual_last_seg_no = 0;
   unsigned int actual_last_seg_length = 0;
   unsigned int last_generated_seg_no = 0;
@@ -43,13 +40,23 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned int last_sent_seg_no = 1;
   unsigned int window_size = BASE_WINDOW_SIZE;
   char buffer[BUFFER_SIZE][SEGMENT_LENGTH];
+  size_t bytes_read;
 
+  // rtt
+  long buffer_ts[BUFFER_SIZE];
+  memset(buffer_ts, 0, sizeof(buffer_ts));
+  long timeoutInterval = TIMEOUT_BASE_US;
+  long estimatedRTT = TIMEOUT_BASE_US;
+  long devRTT = 0;
+  struct timeval timeout;
+
+  // metrics
   unsigned long total_bytes_read = 0;
   unsigned long total_bytes_sent = 0;
   unsigned long total_segs_read = 0;
   unsigned long total_segs_sent = 0;
+  uint64_t start_ts = get_ts();
 
-  size_t bytes_read;
   while (1) {
     unsigned int credit = last_sent_seg_no - last_received_ack_no;  // nb of unacknowledged segments
 
@@ -67,7 +74,6 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       total_segs_read++;
 
       if (feof(fp)) {
-        // if (bytes_read != FILE_CHUNK_SIZE) {
         actual_last_seg_no = last_sent_seg_no;
         actual_last_seg_length = bytes_read;  // might be different from FILE_CHUNK_SIZE
       }
@@ -80,6 +86,10 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       size_t seg_length = ACK_NO_LENGTH + (actual_last_seg_no != last_sent_seg_no ? FILE_CHUNK_SIZE : actual_last_seg_length);
       d_printf("sending segment %d (%ld bytes)\n", last_sent_seg_no, seg_length);
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
+
+      // save timestamp for rtt
+      buffer_ts[(last_sent_seg_no - 1) % BUFFER_SIZE] = (long)get_ts();
+
       total_bytes_sent += seg_length;
       total_segs_sent++;
     }
@@ -92,13 +102,14 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     d_printf("credit = %d\n", credit);
 
     // poll for ACK, or if window is full, wait for ACK until timeout
-    struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &polling;
+    struct timeval *time_ptr = credit == window_size || last_sent_seg_no == actual_last_seg_no ? &timeout : &POLLING;
     if (time_ptr == &timeout) {
       d_printf("waiting for ack because window is full..\n");
     }
 
     timeout.tv_sec = 0;
-    timeout.tv_usec = TIMEOUT_BASE_US;
+    timeout.tv_usec = timeoutInterval;
+    d_printf("timeout = %ld us\n", timeoutInterval);
   select_p:
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
@@ -126,6 +137,13 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
             last_sent_seg_no = last_received_ack_no;
           }
           received_ack = 1;  // cancel timeout trigger
+
+          // rtt
+          long ts = buffer_ts[(ack_no - 1) % BUFFER_SIZE];
+          if (ts > 0) {
+            long sampleRTT = (long)get_ts() - ts;
+            timeoutInterval = compute_rtt_us(sampleRTT, &estimatedRTT, &devRTT);
+          }
 
           // slowstart
           int new_window_size = window_size * SLOWSTART_MULT;

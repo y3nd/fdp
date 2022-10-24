@@ -11,7 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CLIENTNB 1
+#define CLIENTNB 2
 
 #define DEBUG 1
 
