@@ -11,11 +11,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#define CLIENTNB 2
+#include "config.h"
 
 #define DEBUG 0
-
-#define DOMAIN AF_INET
 
 #define FILENAME_LEN 256
 #define MSG_LENGTH 20
@@ -23,18 +21,8 @@
 #define ACK_NO_LENGTH 6
 #define FILE_CHUNK_SIZE 1466  // 1472 - 6 (ACK_NO_LENGTH)
 #define SEGMENT_LENGTH 1472
-#define BASE_WINDOW_SIZE 2
-#define SLOWSTART_MULT 2  // multiplicate window size with this value each seg sent
-#define SLOWSTART_DIV 2   // divide winow size with this value each timeout
-#define BUFFER_SIZE 32    // equals to max window size
-
-#if CLIENTNB == 1
-#define TIMEOUT_BASE_US 50000
-#endif
-
-#if CLIENTNB == 2
+#define BUFFER_SIZE 128  // equals to max window size
 #define TIMEOUT_BASE_US 20000
-#endif
 
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"
@@ -108,14 +96,14 @@ long recv_control_str(int s, char *control_str, struct sockaddr_in *addr_ptr) {
 }
 
 int new_socket(struct sockaddr_in *addr_ptr, unsigned short port) {
-  int sock = socket(DOMAIN, SOCK_DGRAM, 0);
+  int sock = socket(AF_INET, SOCK_DGRAM, 0);
   checkerr(sock, "socket");
 
   int reuse = 1;
   setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
   memset((char *)addr_ptr, 0, sizeof(struct sockaddr_in));
-  addr_ptr->sin_family = DOMAIN;
+  addr_ptr->sin_family = AF_INET;
   addr_ptr->sin_port = htons(port);
   addr_ptr->sin_addr.s_addr = htonl(INADDR_ANY);
 
