@@ -30,7 +30,8 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
   struct timeval POLLING = {
       .tv_sec = 0,
-      .tv_usec = 0};
+      .tv_usec = 0
+  };
   fd_set read_set;
   FD_ZERO(&read_set);
   unsigned int actual_last_seg_no = 0;
@@ -123,8 +124,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       if (strncmp(msg, ACK, 3) == 0) {
         unsigned int ack_no = atoi(&msg[3]);
         if (ack_no == actual_last_seg_no) {
-          print_ts();
-          printf("sending FIN\n");
+          d_printf("sending FIN\n");
           send_str(c_sock, FIN, c_addr_ptr);
           break;
         }
@@ -187,10 +187,20 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   uint64_t total_time_ms = total_time_us / 1000;
   unsigned long total_segs_dropped = total_segs_sent - total_segs_read;
   float segs_drop_rate = (float)total_segs_dropped / total_segs_sent;
-  printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
-  printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
-  printf("segs drop rate: %.2f%%\n", segs_drop_rate * 100);
-  printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms) * 8);
+  //printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
+  //printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
+  //printf("segs drop rate: %.2f%%\n", segs_drop_rate * 100);
+  //printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms) * 8);
+  printf("{\n");
+  printf("  \"speed\": %ld,\n", (total_bytes_read / total_time_ms) * 8);
+  printf("  \"dataSent\": %ld,\n", total_bytes_sent);
+  printf("  \"dataReceived\": %ld,\n", total_bytes_read);
+  printf("  \"time\": %ld,\n", total_time_ms);
+  printf("  \"segsSent\": %ld,\n", total_segs_sent);
+  printf("  \"segsReceived\": %ld,\n", total_segs_read);
+  printf("  \"segsDropped\": %ld,\n", total_segs_dropped);
+  printf("  \"segsDropRate\": %.2f\n", segs_drop_rate);
+  printf("}\n");
 }
 
 int main(int argc, char *argv[]) {

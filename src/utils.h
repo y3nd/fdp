@@ -13,7 +13,7 @@
 
 #define CLIENTNB 2
 
-#define DEBUG 1
+#define DEBUG 0
 
 #define DOMAIN AF_INET
 
