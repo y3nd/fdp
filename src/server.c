@@ -18,7 +18,7 @@ long compute_rtt_us(long sampleRTT, long *estimatedRTT, long *devRTT) {
 }
 
 void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
-  char filename[FILENAME_LEN];
+  char filename[MSG_LENGTH];
   recv_str(c_sock, filename, c_addr_ptr);
 
   // read file
@@ -30,8 +30,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
   struct timeval POLLING = {
       .tv_sec = 0,
-      .tv_usec = 0
-  };
+      .tv_usec = 0};
   fd_set read_set;
   FD_ZERO(&read_set);
   unsigned int actual_last_seg_no = 0;
@@ -40,11 +39,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned int last_received_ack_no = 0;
   unsigned int last_sent_seg_no = 1;
   unsigned int window_size = BASE_WINDOW_SIZE;
-  char buffer[BUFFER_SIZE][SEGMENT_LENGTH];
+  char buffer[MAX_WINDOW_SIZE][SEGMENT_LENGTH];
   size_t bytes_read;
 
   // rtt
-  long buffer_ts[BUFFER_SIZE];
+  long buffer_ts[MAX_WINDOW_SIZE];
   memset(buffer_ts, 0, sizeof(buffer_ts));
   long timeoutInterval = TIMEOUT_BASE_US;
   long estimatedRTT = TIMEOUT_BASE_US;
@@ -56,12 +55,16 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   unsigned long total_bytes_sent = 0;
   unsigned long total_segs_read = 0;
   unsigned long total_segs_sent = 0;
+  long min_timeout = 999999999;
+  long max_timeout = 0;
+  unsigned int min_window_size = 999999999;
+  unsigned int max_window_size = 0;
   uint64_t start_ts = get_ts();
 
   while (1) {
     unsigned int credit = last_sent_seg_no - last_received_ack_no;  // nb of unacknowledged segments
 
-    char *seg = buffer[(last_sent_seg_no - 1) % BUFFER_SIZE];
+    char *seg = buffer[(last_sent_seg_no - 1) % MAX_WINDOW_SIZE];
 
     // segment generation
     if (last_sent_seg_no > last_generated_seg_no) {
@@ -69,7 +72,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
 
       // ACK_NO_LENGTH + 1 to include null terminator
       snprintf(seg, ACK_NO_LENGTH + 1, "%06d", last_sent_seg_no);
-      d_printf("writing seg in buffer i=%d\n", last_sent_seg_no - 1 % BUFFER_SIZE);
+      d_printf("writing seg in buffer i=%d\n", last_sent_seg_no - 1 % MAX_WINDOW_SIZE);
       bytes_read = fread(&seg[ACK_NO_LENGTH], 1, FILE_CHUNK_SIZE, fp);  // overwrites null terminator
       total_bytes_read += bytes_read;
       total_segs_read++;
@@ -89,7 +92,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       send_bytes(c_sock, seg, seg_length, c_addr_ptr);
 
       // save timestamp for rtt
-      buffer_ts[(last_sent_seg_no - 1) % BUFFER_SIZE] = (long)get_ts();
+      buffer_ts[(last_sent_seg_no - 1) % MAX_WINDOW_SIZE] = (long)get_ts();
 
       total_bytes_sent += seg_length;
       total_segs_sent++;
@@ -139,18 +142,18 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
           received_ack = 1;  // cancel timeout trigger
 
           // rtt
-          long ts = buffer_ts[(ack_no - 1) % BUFFER_SIZE];
+          long ts = buffer_ts[(ack_no - 1) % MAX_WINDOW_SIZE];
           if (ts > 0) {
             long sampleRTT = (long)get_ts() - ts;
             timeoutInterval = compute_rtt_us(sampleRTT, &estimatedRTT, &devRTT);
           }
 
           // slowstart
-          int new_window_size = window_size * SLOWSTART_MULT;
-          if (new_window_size <= BUFFER_SIZE) {
+          unsigned int new_window_size = window_size * SLOWSTART_MULT;
+          if (new_window_size < MAX_WINDOW_SIZE) {
             window_size = new_window_size;
           } else {
-            window_size = BUFFER_SIZE;
+            window_size = MAX_WINDOW_SIZE;
           }
         } else {
           goto select_p;
@@ -166,8 +169,8 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
       d_printf("Timeout ! resending from seg %d new credit = %d\n", last_sent_seg_no + 1, last_sent_seg_no - last_received_ack_no);
 
       // slowstart
-      int new_window_size = window_size / SLOWSTART_DIV;
-      if (new_window_size >= BASE_WINDOW_SIZE) {
+      unsigned int new_window_size = window_size / SLOWSTART_DIV;
+      if (new_window_size > BASE_WINDOW_SIZE) {
         window_size = new_window_size;
       } else {
         window_size = BASE_WINDOW_SIZE;
@@ -178,19 +181,28 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     if (last_sent_seg_no != actual_last_seg_no) {
       last_sent_seg_no++;
     }
+
+    // metrics
+    if (timeoutInterval > max_timeout) {
+      max_timeout = timeoutInterval;
+    }
+    if (timeoutInterval < min_timeout) {
+      min_timeout = timeoutInterval;
+    }
+    if (window_size > max_window_size) {
+      max_window_size = window_size;
+    }
+    if (window_size < min_window_size) {
+      min_window_size = window_size;
+    }
   }
 
   fclose(fp);
 
   uint64_t total_time_us = get_ts() - start_ts;
-  // printf("%ld %ld", get_ts(), start_ts);
   uint64_t total_time_ms = total_time_us / 1000;
   unsigned long total_segs_dropped = total_segs_sent - total_segs_read;
   float segs_drop_rate = (float)total_segs_dropped / total_segs_sent;
-  //printf("data sent: %ld bytes | data received: %ld bytes | time: %ld ms\n", total_bytes_sent, total_bytes_read, total_time_ms);
-  //printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
-  //printf("segs drop rate: %.2f%%\n", segs_drop_rate * 100);
-  //printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms) * 8);
   printf("{\n");
   printf("  \"speed\": %ld,\n", (total_bytes_read / total_time_ms) * 8);
   printf("  \"dataSent\": %ld,\n", total_bytes_sent);
@@ -199,7 +211,11 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   printf("  \"segsSent\": %ld,\n", total_segs_sent);
   printf("  \"segsReceived\": %ld,\n", total_segs_read);
   printf("  \"segsDropped\": %ld,\n", total_segs_dropped);
-  printf("  \"segsDropRate\": %.2f\n", segs_drop_rate);
+  printf("  \"segsDropRate\": %.2f,\n", segs_drop_rate);
+  printf("  \"maxTimeout\": %ld,\n", max_timeout);
+  printf("  \"minTimeout\": %ld,\n", min_timeout);
+  printf("  \"maxWindow\": %d,\n", max_window_size);
+  printf("  \"minWindow\": %d\n", min_window_size);
   printf("}\n");
 }
 

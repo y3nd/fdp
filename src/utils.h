@@ -15,13 +15,11 @@
 
 #define DEBUG 0
 
-#define FILENAME_LEN 256
-#define MSG_LENGTH 20
+#define MSG_LENGTH 64
 #define PORT_LENGTH 4
 #define ACK_NO_LENGTH 6
 #define FILE_CHUNK_SIZE 1466  // 1472 - 6 (ACK_NO_LENGTH)
-#define SEGMENT_LENGTH 1472
-#define BUFFER_SIZE 128  // equals to max window size
+#define SEGMENT_LENGTH 1472   // 1500 - 20 (IP header) - 8 (UDP header)
 #define TIMEOUT_BASE_US 20000
 
 #define SYN "SYN"
