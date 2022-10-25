@@ -115,6 +115,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
     FD_SET(c_sock, &read_set);
     select(c_sock + 1, &read_set, NULL, NULL, time_ptr);
     unsigned short received_ack = 0;
+    printf("%ld,%d\n", get_ts(), window_size);
     if (FD_ISSET(c_sock, &read_set)) {
       // expect ACK
       char msg[3 + ACK_NO_LENGTH];
@@ -191,7 +192,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   //printf("segs sent: %ld       | segs received: %ld | dropped segs: %ld\n", total_segs_sent, total_segs_read, total_segs_dropped);
   //printf("segs drop rate: %.2f%%\n", segs_drop_rate * 100);
   //printf("speed %ld kbits / sec \n", (total_bytes_read / total_time_ms) * 8);
-  printf("{\n");
+  /*printf("{\n");
   printf("  \"speed\": %ld,\n", (total_bytes_read / total_time_ms) * 8);
   printf("  \"dataSent\": %ld,\n", total_bytes_sent);
   printf("  \"dataReceived\": %ld,\n", total_bytes_read);
@@ -200,7 +201,7 @@ void handle_client(int c_sock, struct sockaddr_in *c_addr_ptr) {
   printf("  \"segsReceived\": %ld,\n", total_segs_read);
   printf("  \"segsDropped\": %ld,\n", total_segs_dropped);
   printf("  \"segsDropRate\": %.2f\n", segs_drop_rate);
-  printf("}\n");
+  printf("}\n");*/
 }
 
 int main(int argc, char *argv[]) {
