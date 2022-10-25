@@ -1,9 +1,9 @@
 all: ../bin/server
 
-debug: server.c utils.h
+debug: server.c utils.h config.h
 	gcc -g -Wall -o ../bin/server server.c
 
-../bin/server: server.c utils.h
+../bin/server: server.c utils.h config.h
 	gcc -Wall -o ../bin/server server.c
 
 clean:
