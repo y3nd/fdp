@@ -1,5 +1,5 @@
 
-                #define BASE_WINDOW_SIZE 32
-                #define MAX_WINDOW_SIZE 32
-                #define SLOWSTART_MULT 1
-                #define SLOWSTART_DIV 1
+#define BASE_WINDOW_SIZE 69
+#define MAX_WINDOW_SIZE 69
+#define SLOWSTART_MULT 2
+#define SLOWSTART_DIV 2
