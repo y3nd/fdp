@@ -2,16 +2,16 @@ import json
 import subprocess
 from time import sleep
 
-ip = '134.214.203.38'
+ip = '134.214.202.220'
 
 MIN_WINDOW_SIZE = 2
-MAX_WINDOW_SIZE = 128
+MAX_WINDOW_SIZE = 32
 
 def main():
     with open('results.csv', 'w') as results:
         results.write('client_no,window_size,speed,dataSent,dataReceived,time,segsSent,segsReceived,segsDropped,segsDropRate,maxTimeout,minTimeout,maxWindow,minWindow\n')
 
-    for client_no in range(1, 2):
+    for client_no in range(2, 3):
         for window_size in range(MIN_WINDOW_SIZE, MAX_WINDOW_SIZE + 1):
             print("Compiling with")
 
@@ -80,6 +80,8 @@ def main():
                         s += ','
                     results.write(s)
                 results.write('\n')
+
+            sleep(1)
 
         
         
