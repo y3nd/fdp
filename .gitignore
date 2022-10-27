@@ -1,2 +1,2 @@
-bin/server
+bin/server*
 *.data

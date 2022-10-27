@@ -22,6 +22,9 @@
 #define SEGMENT_LENGTH 1472   // 1500 - 20 (IP header) - 8 (UDP header)
 #define TIMEOUT_BASE_US 20000
 
+#define SLOWSTART_MULT 1
+#define SLOWSTART_DIV 1
+
 #define SYN "SYN"
 #define SYN_ACK "SYN-ACK"
 #define ACK "ACK"
